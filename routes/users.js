@@ -1,11 +1,11 @@
 import express from "express";
 import User from "../models/User.js";
-import auth from "../middleware/auth.js";
+import { authenticate } from "../middleware/auth.js";
 
 const router = express.Router();
 
 
-router.get("/profile", auth, async (req, res) => {
+router.get("/profile", authenticate, async (req, res) => {
   try {
     const user = await User.findById(req.userId).select("-password");
     if (!user) {
@@ -18,12 +18,35 @@ router.get("/profile", auth, async (req, res) => {
 });
 
 
-router.put("/profile", auth, async (req, res) => {
+router.put("/profile", authenticate, async (req, res) => {
   try {
     const { name, email, phone, bio, profileImage } = req.body;
+
+    if (email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({ message: "Invalid email format" });
+      }
+
+      const existingUser = await User.findOne({
+        email: email.toLowerCase(),
+        _id: { $ne: req.userId },
+      });
+      if (existingUser) {
+        return res.status(400).json({ message: "Email already in use" });
+      }
+    }
+
+    const updateData = {};
+    if (name) updateData.name = name.trim();
+    if (email) updateData.email = email.toLowerCase();
+    if (phone) updateData.phone = phone.trim();
+    if (bio) updateData.bio = bio.trim();
+    if (profileImage) updateData.profileImage = profileImage;
+
     const user = await User.findByIdAndUpdate(
       req.userId,
-      { name, email, phone, bio, profileImage },
+      updateData,
       { new: true }
     ).select("-password");
 
@@ -37,7 +60,7 @@ router.put("/profile", auth, async (req, res) => {
 });
 
 
-router.get("/watch-history", auth, async (req, res) => {
+router.get("/watch-history", authenticate, async (req, res) => {
   try {
     const user = await User.findById(req.userId).select("watchHistory");
     if (!user) {
@@ -50,9 +73,14 @@ router.get("/watch-history", auth, async (req, res) => {
 });
 
 
-router.post("/watch-history", auth, async (req, res) => {
+router.post("/watch-history", authenticate, async (req, res) => {
   try {
     const { movieId, movieTitle, movieImage } = req.body;
+
+    if (!movieId) {
+      return res.status(400).json({ message: "MovieId is required" });
+    }
+
     const user = await User.findById(req.userId);
 
     if (!user) {
@@ -60,12 +88,11 @@ router.post("/watch-history", auth, async (req, res) => {
     }
 
     const watchEntry = {
-      movieId,
-      movieTitle,
-      movieImage,
+      movieId: String(movieId),
+      movieTitle: movieTitle || "Unknown",
+      movieImage: movieImage || "",
       watchedAt: new Date(),
     };
-
 
     user.watchHistory = [watchEntry, ...(user.watchHistory || [])].slice(0, 20);
     await user.save();

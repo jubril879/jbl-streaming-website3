@@ -2,53 +2,57 @@ import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
-import nodemailer from "nodemailer";
 import authRoutes from "./routes/auth.js";
 import movieRoutes from "./routes/movies.js";
 import userRoutes from "./routes/users.js";
+import User from "./models/User.js";
+import Movie from "./models/Movie.js";
+import bcrypt from "bcryptjs";
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
- 
-
 
 app.use(cors());
 app.use(express.json());
 
-
 mongoose
   .connect(process.env.MONGODB_URI)
-  .then(() => {
+  .then(async () => {
     console.log("✅ MongoDB connected successfully");
- 
-    createAdminUser();
+    await createAdminUser();
+    const movieCount = await Movie.countDocuments();
+    console.log(`📊 Current movie count: ${movieCount}`);
+    await createDefaultMovies();
   })
-  .catch((err) => console.log("❌ MongoDB connection error:", err));
-
+  .catch((err) => {
+    console.error("❌ MongoDB connection error:", err.message);
+    console.error("Please ensure your MONGODB_URI is correct and your database is accessible.");
+  });
 
 app.use("/api/auth", authRoutes);
 app.use("/api/movies", movieRoutes);
 app.use("/api/users", userRoutes);
 
-
 app.get("/api/health", (req, res) => {
   res.json({ message: "Server is running", status: "ok" });
 });
 
-
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ message: "Something went wrong", error: err.message });
+app.use((req, res) => {
+  res.status(404).json({ message: "Route not found" });
 });
 
+app.use((err, req, res, next) => {
+  console.error("❌ Error:", err.message);
+  res.status(err.status || 500).json({
+    message: err.message || "Something went wrong",
+    error: process.env.NODE_ENV === "development" ? err : {},
+  });
+});
 
 const createAdminUser = async () => {
   try {
-    const User = (await import("./models/User.js")).default;
-    const bcrypt = (await import("bcryptjs")).default;
-
     const adminExists = await User.findOne({ email: "admin@cinemahub.com" });
     if (!adminExists) {
       const hashedPassword = await bcrypt.hash("admin123", 10);
@@ -58,66 +62,154 @@ const createAdminUser = async () => {
         password: hashedPassword,
         role: "admin",
       });
-      console.log("Default admin user created");
+      console.log("✅ Default admin user created");
+    } else {
+      console.log("ℹ️ Admin user already exists");
     }
   } catch (error) {
-    console.log("Admin user creation error:", error.message);
+    console.error("❌ Admin user creation error:", error.message);
   }
 };
 
-
-
-
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
-
-
-transporter.verify((error, success) => {
-  if (error) {
-    console.error('Transporter error:', error);
-  } else {
-    console.log('Transporter ready to send emails');
-  }
-});
-
-
-app.post('/api/send-email', async (req, res) => {
-  const { name, email, message } = req.body;
-
-  if (!name || !email || !message) {
-    return res.status(400).json({ success: false, error: 'All fields are required' });
-  }
-
-  const mailOptions = {
-    from: `"Contact Form" <${process.env.EMAIL_USER}>`, // Sender (your email)
-    to: process.env.EMAIL_USER, 
-    replyTo: email, 
-    subject: `New Contact Message from ${name}`,
-    text: message,
-    html: `
-      <h3>New message from ${name}</h3>
-      <p><strong>Email:</strong> ${email}</p>
-      <p><strong>Message:</strong></p>
-      <p>${message.replace(/\n/g, '<br>')}</p>
-    `,
-  };
-
+const createDefaultMovies = async () => {
   try {
-    await transporter.sendMail(mailOptions);
-    res.json({ success: true, message: 'Email sent successfully!' });
+    const movieCount = await Movie.countDocuments();
+    if (movieCount === 0) {
+      const admin = await User.findOne({ email: "admin@cinemahub.com" });
+      if (!admin) {
+        console.log("⚠️ Admin user not found, skipping default movies");
+        return;
+      }
+
+      const defaultMovies = [
+        {
+          title: "Inception",
+          genre: "Sci-Fi",
+          rating: 8.8,
+          year: 2010,
+          description: "A skilled thief leads a team to pull off the impossible: stealing an idea from someone's mind while they dream.",
+          poster: "https://via.placeholder.com/200x300?text=Inception",
+          videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+          uploadedBy: admin._id,
+          isFeatured: true,
+        },
+        {
+          title: "The Dark Knight",
+          genre: "Action",
+          rating: 9.0,
+          year: 2008,
+          description: "When the menace known as the Joker wreaks havoc, Batman must accept one of the greatest tests.",
+          poster: "https://via.placeholder.com/200x300?text=The+Dark+Knight",
+          videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+          uploadedBy: admin._id,
+          isFeatured: true,
+        },
+        {
+          title: "Interstellar",
+          genre: "Sci-Fi",
+          rating: 8.6,
+          year: 2014,
+          description: "A team of astronauts travels through a wormhole near Saturn to find a new home for humanity.",
+          poster: "https://via.placeholder.com/200x300?text=Interstellar",
+          videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+          uploadedBy: admin._id,
+          isFeatured: true,
+        },
+        {
+          title: "Pulp Fiction",
+          genre: "Crime",
+          rating: 8.9,
+          year: 1994,
+          description: "The lives of two mob hitmen, a boxer, a gangster's wife, and a pair of diner bandits intertwine.",
+          poster: "https://via.placeholder.com/200x300?text=Pulp+Fiction",
+          videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+          uploadedBy: admin._id,
+          isFeatured: false,
+        },
+        {
+          title: "The Shawshank Redemption",
+          genre: "Drama",
+          rating: 9.3,
+          year: 1994,
+          description: "Two imprisoned men bond over a number of years, finding solace and eventual redemption through acts of common decency.",
+          poster: "https://via.placeholder.com/200x300?text=Shawshank",
+          videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+          uploadedBy: admin._id,
+          isFeatured: true,
+        },
+        {
+          title: "The Matrix",
+          genre: "Sci-Fi",
+          rating: 8.7,
+          year: 1999,
+          description: "A computer programmer discovers that reality as he knows it is a simulation.",
+          poster: "https://via.placeholder.com/200x300?text=The+Matrix",
+          videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+          uploadedBy: admin._id,
+          isFeatured: true,
+        },
+        {
+          title: "Gladiator",
+          genre: "Action",
+          rating: 8.5,
+          year: 2000,
+          description: "A former Roman General sets out to exact vengeance against the corrupt emperor who murdered his family and sent him into slavery.",
+          poster: "https://via.placeholder.com/200x300?text=Gladiator",
+          videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+          uploadedBy: admin._id,
+          isFeatured: true,
+        },
+        {
+          title: "The Prestige",
+          genre: "Drama",
+          rating: 8.5,
+          year: 2006,
+          description: "After a tragic accident, two stage magicians in 1890s London engage in a battle to create the ultimate illusion.",
+          poster: "https://via.placeholder.com/200x300?text=The+Prestige",
+          videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+          uploadedBy: admin._id,
+          isFeatured: false,
+        },
+        {
+          title: "Parasite",
+          genre: "Thriller",
+          rating: 8.5,
+          year: 2019,
+          description: "Greed and class discrimination threaten the newly formed symbiotic relationship between the wealthy Park family and the destitute Kim clan.",
+          poster: "https://via.placeholder.com/200x300?text=Parasite",
+          videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+          uploadedBy: admin._id,
+          isFeatured: true,
+        },
+        {
+          title: "Django Unchained",
+          genre: "Action",
+          rating: 8.4,
+          year: 2012,
+          description: "With the help of a German bounty-hunter, a freed slave sets out to rescue his wife from a brutal plantation-owner in Mississippi.",
+          poster: "https://via.placeholder.com/200x300?text=Django",
+          videoUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
+          uploadedBy: admin._id,
+          isFeatured: false,
+        },
+      ];
+
+      await Movie.insertMany(defaultMovies);
+      console.log("✅ Default movies created");
+    } else {
+      console.log("ℹ️ Movies already exist in database");
+    }
   } catch (error) {
-    console.error('Error sending email:', error);
-    res.status(500).json({ success: false, error: 'Failed to send email' });
+    console.error("❌ Default movies creation error:", error.message);
   }
+};
+
+const server = app.listen(PORT, () => {
+  console.log(`✅ Server running on http://localhost:${PORT}`);
+  console.log(`📝 Environment: ${process.env.NODE_ENV || "development"}`);
 });
 
-
-
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+process.on("unhandledRejection", (err) => {
+  console.error("❌ Unhandled Rejection:", err);
+  server.close(() => process.exit(1));
 });

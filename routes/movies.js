@@ -13,8 +13,8 @@ router.get("/", async (req, res) => {
       rating,
       sortBy = "createdAt",
       order = "desc",
-      page = 1,
-      limit = 10,
+      page,
+      limit,
     } = req.query;
 
     let query = {};
@@ -46,28 +46,31 @@ router.get("/", async (req, res) => {
       sortOptions.createdAt = -1;
     }
 
-    const pageNum = parseInt(page);
-    const limitNum = parseInt(limit);
-    const skip = (pageNum - 1) * limitNum;
-
-    const movies = await Movie.find(query)
+    let query_builder = Movie.find(query)
       .populate("uploadedBy", "name email")
-      .sort(sortOptions)
-      .skip(skip)
-      .limit(limitNum);
+      .sort(sortOptions);
 
-    const total = await Movie.countDocuments(query);
+    if (page && limit) {
+      const pageNum = parseInt(page);
+      const limitNum = parseInt(limit);
+      const skip = (pageNum - 1) * limitNum;
+      query_builder = query_builder.skip(skip).limit(limitNum);
+      const total = await Movie.countDocuments(query);
+      const movies = await query_builder;
+      return res.json({
+        movies,
+        pagination: {
+          currentPage: pageNum,
+          totalPages: Math.ceil(total / limitNum),
+          totalMovies: total,
+          hasNext: pageNum * limitNum < total,
+          hasPrev: pageNum > 1,
+        },
+      });
+    }
 
-    res.json({
-      movies,
-      pagination: {
-        currentPage: pageNum,
-        totalPages: Math.ceil(total / limitNum),
-        totalMovies: total,
-        hasNext: pageNum * limitNum < total,
-        hasPrev: pageNum > 1,
-      },
-    });
+    const movies = await query_builder;
+    res.json(movies);
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
@@ -114,22 +117,32 @@ router.post("/", authenticate, adminOnly, async (req, res) => {
     } = req.body;
 
     if (!title || !genre || !year || !poster || !videoUrl) {
-      return res
-        .status(400)
-        .json({
-          message: "Title, genre, year, poster, and videoUrl are required",
-        });
+      return res.status(400).json({
+        message: "Title, genre, year, poster, and videoUrl are required",
+      });
+    }
+
+    if (title.trim().length === 0) {
+      return res.status(400).json({ message: "Title cannot be empty" });
+    }
+
+    if (rating && (rating < 0 || rating > 10)) {
+      return res.status(400).json({ message: "Rating must be between 0 and 10" });
+    }
+
+    if (year && (year < 1800 || year > new Date().getFullYear() + 5)) {
+      return res.status(400).json({ message: "Invalid year" });
     }
 
     const movie = new Movie({
-      title,
+      title: title.trim(),
       genre,
-      rating: rating || 0,
-      year,
-      description,
+      rating: rating ? Number(rating) : 0,
+      year: Number(year),
+      description: description ? description.trim() : "",
       poster,
       videoUrl,
-      isFeatured: isFeatured || false,
+      isFeatured: Boolean(isFeatured),
       uploadedBy: req.userId,
     });
 
@@ -158,19 +171,32 @@ router.put("/:id", authenticate, adminOnly, async (req, res) => {
       isFeatured,
     } = req.body;
 
+    if (title && title.trim().length === 0) {
+      return res.status(400).json({ message: "Title cannot be empty" });
+    }
+
+    if (rating && (rating < 0 || rating > 10)) {
+      return res.status(400).json({ message: "Rating must be between 0 and 10" });
+    }
+
+    if (year && (year < 1800 || year > new Date().getFullYear() + 5)) {
+      return res.status(400).json({ message: "Invalid year" });
+    }
+
+    const updateData = {};
+    if (title) updateData.title = title.trim();
+    if (genre) updateData.genre = genre;
+    if (rating) updateData.rating = Number(rating);
+    if (year) updateData.year = Number(year);
+    if (description) updateData.description = description.trim();
+    if (poster) updateData.poster = poster;
+    if (videoUrl) updateData.videoUrl = videoUrl;
+    if (isFeatured !== undefined) updateData.isFeatured = Boolean(isFeatured);
+    updateData.updatedAt = Date.now();
+
     const movie = await Movie.findByIdAndUpdate(
       req.params.id,
-      {
-        title,
-        genre,
-        rating,
-        year,
-        description,
-        poster,
-        videoUrl,
-        isFeatured,
-        updatedAt: Date.now(),
-      },
+      updateData,
       { new: true }
     ).populate("uploadedBy", "name email");
 
