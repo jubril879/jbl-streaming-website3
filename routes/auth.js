@@ -6,14 +6,19 @@ import User from "../models/User.js";
 
 const router = express.Router();
 
-// Nodemailer transporter setup
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
+let transporter;
+try {
+  transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER || "placeholder@gmail.com",
+      pass: process.env.EMAIL_PASS || "placeholder",
+    },
+  });
+  console.log("ℹ️ Nodemailer transporter initialized");
+} catch (error) {
+  console.error("❌ Nodemailer initialization error:", error.message);
+}
 
 router.post("/register", async (req, res) => {
   try {
@@ -47,7 +52,6 @@ router.post("/register", async (req, res) => {
 
     await user.save();
 
-    // Send welcome email
     const mailOptions = {
       from: `"CinemaHub" <${process.env.EMAIL_USER}>`,
       to: user.email,
@@ -66,7 +70,6 @@ router.post("/register", async (req, res) => {
       console.log('Welcome email sent to:', user.email);
     } catch (emailError) {
       console.error('Error sending welcome email:', emailError);
-      // Don't fail registration if email fails
     }
 
     const token = jwt.sign(
@@ -93,6 +96,7 @@ router.post("/register", async (req, res) => {
 router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
+    console.log(`Login attempt for: ${email}`);
 
     if (!email || !password) {
       return res
@@ -102,12 +106,19 @@ router.post("/login", async (req, res) => {
 
     const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
+      console.log(`User not found: ${email}`);
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
+      console.log(`Invalid password for: ${email}`);
       return res.status(401).json({ message: "Invalid email or password" });
+    }
+
+    if (!process.env.JWT_SECRET) {
+      console.error("JWT_SECRET is not defined in environment variables");
+      throw new Error("Internal configuration error");
     }
 
     const token = jwt.sign(
@@ -116,6 +127,7 @@ router.post("/login", async (req, res) => {
       { expiresIn: "7d" }
     );
 
+    console.log(`Login successful for: ${email} (Role: ${user.role})`);
     res.json({
       message: "Login successful",
       token,
@@ -127,6 +139,7 @@ router.post("/login", async (req, res) => {
       },
     });
   } catch (error) {
+    console.error("Login Error:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 });

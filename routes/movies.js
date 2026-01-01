@@ -6,6 +6,7 @@ const router = express.Router();
 
 router.get("/", async (req, res) => {
   try {
+    console.log("GET /api/movies - Fetching all movies");
     const {
       search,
       genre,
