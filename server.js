@@ -21,9 +21,9 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 app.use(cors({
-  origin:["https://jbl-streaming-website.vercel.app", "http://localhost:5000", "http://localhost:5173"],
+  origin:"https://jbl-streaming-website.vercel.app",
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-  credentials: true
+  credentials: true,
 }));
 app.use(express.json());
 
