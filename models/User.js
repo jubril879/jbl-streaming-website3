@@ -20,6 +20,20 @@ const userSchema = new mongoose.Schema({
     enum: ["user", "admin"],
     default: "user",
   },
+  adminVerificationKey: {
+    type: String,
+    unique: true,
+    sparse: true,
+    default: null,
+  },
+  resetCode: {
+    type: String,
+    default: null,
+  },
+  resetCodeExpires: {
+    type: Date,
+    default: null,
+  },
   phone: String,
   bio: String,
   profileImage: String,

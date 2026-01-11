@@ -34,7 +34,9 @@ router.post("/register", async (req, res) => {
     }
 
     if (password.length < 6) {
-      return res.status(400).json({ message: "Password must be at least 6 characters" });
+      return res
+        .status(400)
+        .json({ message: "Password must be at least 6 characters" });
     }
 
     const existingUser = await User.findOne({ email: email.toLowerCase() });
@@ -67,9 +69,9 @@ router.post("/register", async (req, res) => {
 
     try {
       await transporter.sendMail(mailOptions);
-      console.log('Welcome email sent to:', user.email);
+      console.log("Welcome email sent to:", user.email);
     } catch (emailError) {
-      console.error('Error sending welcome email:', emailError);
+      console.error("Error sending welcome email:", emailError);
     }
 
     const token = jwt.sign(
@@ -140,6 +142,149 @@ router.post("/login", async (req, res) => {
     });
   } catch (error) {
     console.error("Login Error:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+});
+
+
+
+// Forgot password - send reset code
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Generate 6-digit reset code
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const resetCodeExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    user.resetCode = resetCode;
+    user.resetCodeExpires = resetCodeExpires;
+    await user.save();
+
+    const mailOptions = {
+      from: `"CinemaHub" <${process.env.EMAIL_USER}>`,
+      to: user.email,
+      subject: "Password Reset Code - CinemaHub",
+      text: `Hi ${user.name},\n\nYour password reset code is: ${resetCode}\n\nThis code will expire in 10 minutes.\n\nIf you didn't request this, please ignore this email.\n\n— CinemaHub Team`,
+      html: `
+        <h2>Password Reset - CinemaHub</h2>
+        <p>Hi ${user.name},</p>
+        <p>Your password reset code is:</p>
+        <h1 style="color: #3b82f6; font-size: 32px; letter-spacing: 4px;">${resetCode}</h1>
+        <p>This code will expire in 10 minutes.</p>
+        <p>If you didn't request this, please ignore this email.</p>
+        <p>— CinemaHub Team</p>
+      `,
+    };
+
+    try {
+      await transporter.sendMail(mailOptions);
+      console.log("Password reset email sent to:", user.email);
+      res.json({ message: "Reset code sent to your email" });
+    } catch (emailError) {
+      console.error("Error sending reset email:", emailError);
+      res.status(500).json({ message: "Failed to send reset email" });
+    }
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+});
+
+// Verify reset code
+router.post("/verify-reset-code", async (req, res) => {
+  try {
+    const { email, code } = req.body;
+
+    if (!email || !code) {
+      return res.status(400).json({ message: "Email and code are required" });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (!user.resetCode || !user.resetCodeExpires) {
+      return res
+        .status(400)
+        .json({ message: "No reset code found. Please request a new one." });
+    }
+
+    if (user.resetCode !== code) {
+      return res.status(400).json({ message: "Invalid reset code" });
+    }
+
+    if (new Date() > user.resetCodeExpires) {
+      return res
+        .status(400)
+        .json({ message: "Reset code has expired. Please request a new one." });
+    }
+
+    res.json({ message: "Code verified successfully" });
+  } catch (error) {
+    console.error("Verify reset code error:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+});
+
+// Reset password
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { email, code, newPassword } = req.body;
+
+    if (!email || !code || !newPassword) {
+      return res
+        .status(400)
+        .json({ message: "Email, code, and new password are required" });
+    }
+
+    if (newPassword.length < 6) {
+      return res
+        .status(400)
+        .json({ message: "Password must be at least 6 characters" });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (!user.resetCode || !user.resetCodeExpires) {
+      return res
+        .status(400)
+        .json({ message: "No reset code found. Please request a new one." });
+    }
+
+    if (user.resetCode !== code) {
+      return res.status(400).json({ message: "Invalid reset code" });
+    }
+
+    if (new Date() > user.resetCodeExpires) {
+      return res
+        .status(400)
+        .json({ message: "Reset code has expired. Please request a new one." });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    user.resetCode = null;
+    user.resetCodeExpires = null;
+    await user.save();
+
+    console.log(`Password reset successful for: ${email}`);
+    res.json({ message: "Password reset successfully" });
+  } catch (error) {
+    console.error("Reset password error:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 });
